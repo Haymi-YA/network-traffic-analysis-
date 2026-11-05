@@ -132,6 +132,74 @@ The client sent a HART-IP Session Close Request. A TCP FIN, ACK was then observe
 
 **Finding:** The HART-IP session close messages indicate an attempt to terminate the application-level session. The subsequent TCP RST is worth documenting and investigating further. However, a reset by itself does not prove malicious activity. Additional packet details and endpoint context would be needed to determine why it occurred.
 
+### 5.7 TCP Connection Termination and SMB Communication
+
+After examining the HART-IP conversation, we expanded the investigation to the remaining TCP traffic using the following filters:
+
+| Display filter | Observed packets |
+|---|---:|
+| `tcp` | 87 |
+| `tcp.flags.fin == 1` | 44 |
+| `tcp.flags.reset == 1` | 1 |
+| `tcp.len > 0` | 26 |
+| `tcp.flags.syn == 1 && tcp.flags.ack == 0` | 1 |
+
+#### A. TCP Connection Termination (FIN, ACK)
+
+The FIN, ACK inspection revealed that many termination packets originated from `192.168.0.100` and were directed to multiple external IP addresses.
+
+Most of these connections used destination port 80 (HTTP), with different ephemeral source ports.
+
+Examples include:
+
+| Packet | Source IP | Destination IP | Destination port | TCP flags |
+|---|---|---|---|---|
+| 28 | 192.168.0.100 | 64.185.181.238 | 80 | FIN, ACK |
+| 29 | 192.168.0.100 | 23.15.7.51 | 80 | FIN, ACK |
+| 30 | 192.168.0.100 | 23.15.7.51 | 80 | FIN, ACK |
+| 31 | 192.168.0.100 | 72.21.91.19 | 80 | FIN, ACK |
+| 32 | 192.168.0.100 | 205.251.253.243 | 80 | FIN, ACK |
+
+These packets occurred within approximately 100 milliseconds, between 15:13:24.947 and 15:13:25.047 UTC.
+
+**Interpretation:** Host `192.168.0.100` was sending TCP connection termination messages to multiple remote hosts. This indicates that several previously established connections were being closed. The FIN packets alone do not establish which host originally initiated those connections or why they were closed.
+
+One additional observation was packet 70, a 93-byte TLSv1 Encrypted Alert sent from `192.168.0.100` to `74.125.159.99`. The encrypted alert contents were not available from the packet summary.
+
+#### B. SMB Communication – TCP Stream 44
+
+A separate internal TCP conversation was identified as Stream 44, involving communication between `192.168.0.100` and `192.168.0.101` over destination port 445, commonly associated with SMB.
+
+| Attribute | Observed value |
+|---|---|
+| TCP Stream | 44 |
+| Source IP | `192.168.0.100` |
+| Destination IP | `192.168.0.101` |
+| Destination port | 445 |
+| Protocol | SMB |
+
+The following packets were examined:
+
+| Packet | Protocol | Observation |
+|---|---|---|
+| 107 | TCP | ACK from `192.168.0.100` to `192.168.0.101` |
+| 115 | SMB | Session message; Check Directory, Directory: `\` |
+| 116 | TCP | ACK from `192.168.0.100` to `192.168.0.101` |
+
+Packet 115 indicates directory-related SMB activity between the two internal hosts. Packet 116 is a subsequent TCP acknowledgment.
+
+**Interpretation:** The traffic demonstrates internal SMB communication between the two hosts. However, the available packet summaries do not establish whether the directory operation succeeded, what share was accessed, or whether any files were transferred.
+
+#### C. Security Relevance
+
+The TCP investigation identified three notable communication patterns:
+
+1. Multiple TCP connections from `192.168.0.100` to external hosts were being terminated.
+2. TLS encrypted alert traffic was observed during the same period.
+3. Internal SMB communication occurred between `192.168.0.100` and `192.168.0.101`.
+
+These observations provide useful information about external and internal network activity. Further examination of application-layer messages, SMB responses, and endpoint logs would be necessary to determine whether the activity was expected or suspicious.
+
 ## 6. Security Observations
 
 | Observation | Security interpretation |
