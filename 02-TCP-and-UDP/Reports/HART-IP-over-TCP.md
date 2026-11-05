@@ -1,32 +1,52 @@
-# HART-IP TCP Traffic Analysis
+# HART-IP PCAP Analysis – TCP Investigation
 
-## 4. Initial TCP Traffic Overview and Conversation Selection
+## 1. Overview
 
-### 4.1 Applying the TCP Display Filter
+This report documents the TCP analysis of a sample packet capture (PCAP) containing HART-IP communication. The investigation was conducted using Wireshark to identify TCP conversations, examine connection establishment, inspect HART-IP messages, and review session termination.
 
-The investigation began by applying the Wireshark display filter:
+The capture contains both TCP and UDP traffic. This report focuses exclusively on the TCP communication. UDP analysis will be documented separately.
 
-```text
-tcp
-```
+## 2. Objectives
 
-This filter displayed all TCP packets in the capture, allowing us to focus on TCP communication before examining individual conversations.
+The objectives of this investigation were to:
 
-### 4.2 Reviewing TCP Conversations
+- Identify TCP conversations and communicating hosts.
+- Examine the TCP three-way handshake.
+- Identify HART-IP session initiation and communication.
+- Inspect request and response exchanges.
+- Examine session keep-alive and termination messages.
+- Identify unusual activity that may require further investigation.
 
-After filtering the traffic, we opened:
+## 3. Tools and Environment
 
-**Statistics → Conversations → TCP**
+| Item | Details |
+|---|---|
+| Analysis tool | Wireshark |
+| Evidence | Sample HART-IP PCAP |
+| Protocol | TCP / HART-IP |
+| Primary filter | `tcp` |
+| Conversation filter | `tcp.stream == 43` |
+| HART-IP port | TCP 5094 |
 
-The TCP Conversations window showed a total of **45 TCP conversations**.
+## 4. Initial TCP Traffic Overview
 
-We reviewed the listed conversations to identify communication involving the HART-IP service. One conversation stood out because it involved destination port `5094`, which is associated with HART-IP.
+The Wireshark Conversations window showed:
 
-### 4.3 Selecting TCP Stream ID 43
+- 45 TCP conversations.
+- Most of the visible TCP conversations involved `192.168.0.100` communicating with external or remote IP addresses.
+- Several connections used destination port 80 (HTTP), while one visible connection used port 443 (HTTPS).
+- An internal connection between `192.168.0.100` and `192.168.0.101` used destination port 445 (SMB).
+- A separate conversation between `192.168.0.101` and `192.168.0.10` used destination port 5094.
 
-From the 45 TCP conversations, we selected the conversation identified as **Stream ID 43** for detailed investigation.
+The conversation using TCP port 5094 was selected for further investigation because port 5094 is associated with HART-IP communication.
 
-The selected conversation had the following details:
+**Note:** The observation that `192.168.0.100` initiated many visible conversations does not establish that it initiated every TCP connection in the capture.
+
+## 5. Detailed HART-IP TCP Conversation
+
+### 5.1 Communication Details
+
+The selected conversation had the following characteristics:
 
 | Attribute | Observed value |
 |---|---|
@@ -34,100 +54,133 @@ The selected conversation had the following details:
 | Source port | `49559` |
 | Destination IP | `192.168.0.10` |
 | Destination port | `5094` |
-| TCP Stream ID | `43` |
+| Protocol | TCP / HART-IP |
+| TCP stream | 43 |
 | Total packets | 41 |
 | Approximate data size | 3 KB |
 
-To isolate this conversation, we applied the following display filter:
+The source port `49559` is an ephemeral client-side port, while destination port `5094` is the HART-IP service port.
 
-```text
-tcp.stream == 43
-```
+### 5.2 TCP Three-Way Handshake
 
-This allowed us to examine only the packets belonging to the selected TCP conversation, including the TCP handshake, HART-IP messages, keep-alive exchange, and session termination.
+The connection began with a successful TCP three-way handshake:
 
-**Finding:** We began with the general TCP filter, reviewed all 45 TCP conversations, and selected Stream ID 43 because its destination port (5094) indicated HART-IP communication. This provided a focused starting point for the detailed protocol analysis.
+| Packet | Communication | TCP flag | Meaning |
+|---|---|---|---|
+| 73 | `192.168.0.101` → `192.168.0.10` | SYN | Client requests a connection |
+| 74 | `192.168.0.10` → `192.168.0.101` | SYN, ACK | Server acknowledges and responds |
+| 75 | `192.168.0.101` → `192.168.0.10` | ACK | Client confirms the connection |
 
+**Finding:** The three-way handshake completed successfully, establishing the TCP connection between the two hosts.
 
-## 5. TCP Three-Way Handshake
+### 5.3 HART-IP Session Initiation
 
-Packets 73–75 demonstrated a successful TCP three-way handshake.
+After the TCP connection was established, HART-IP session initiation messages were exchanged:
 
-1. Packet 73: Client sent SYN.
-2. Packet 74: Server responded with SYN-ACK.
-3. Packet 75: Client returned ACK.
+| Packet | Message | Sequence |
+|---|---|---|
+| 76 | Session Initiate Request | 2 |
+| 78 | Session Initiate Response | 2 |
 
-This confirmed successful TCP connection establishment between the two devices.
+The request was sent by `192.168.0.101`, and the response came from `192.168.0.10`.
 
-## 5. HART-IP Session Initiation
+**Finding:** The packet sequence shows that the TCP connection was followed by HART-IP session initiation and a corresponding response.
 
-Packets 76 and 78 showed the HART-IP Session Initiate Request and corresponding Session Initiate Response.
+### 5.4 HART-IP Pass-Through Communication
 
-This demonstrated that the application-level HART-IP session was successfully initiated after the TCP connection was established.
+The packet capture showed nine Pass Through Request/Response exchanges.
 
-## 6. HART-IP Pass Through Communication
+The observed sequence numbers ranged from 3 to 11.
 
-Packets 80–106 contained nine visible Pass Through requests and nine corresponding responses.
+| Communication | Observed messages |
+|---|---|
+| Pass-through requests | 9 |
+| Pass-through responses | 9 |
+| Sequence numbers | 3–11 |
 
-The HART-IP sequence numbers ranged from 3 to 11.
+These exchanges indicate that the two endpoints continued communicating after the HART-IP session was established.
 
-Each observed request received a corresponding response with the same sequence number.
+**Finding:** The repeated request-and-response pattern is consistent with ongoing HART-IP communication. The packet names alone do not establish whether the underlying operations were successful or whether the messages contained abnormal commands.
 
-This demonstrated active bidirectional communication between the two endpoints.
+### 5.5 Keep-Alive Messages
 
-## 7. Keep-Alive Analysis
+The capture also contained:
 
-Packets 108–110 showed a Keep-Alive Request and corresponding Keep-Alive Response.
+| Packet | Message | Sequence |
+|---|---|---|
+| 108 | Keep Alive Request | 12 |
+| 109 | Keep Alive Response | 12 |
 
-The exchange occurred approximately 30 seconds after the previous Pass Through response.
+The request was observed at `15:13:57.153878 UTC`, and the response at `15:13:57.155206 UTC`.
 
-The server responded approximately 1.3 milliseconds after the request.
+The response followed approximately 1.3 milliseconds after the request.
 
-This indicated that the HART-IP session was still responsive.
+**Finding:** The endpoint responded promptly to the keep-alive request, indicating that the HART-IP session was still responding at that point in the capture.
 
-## 8. Session Termination
+### 5.6 Session Termination
 
-Packets 111–114 showed the final communication sequence:
+The final HART-IP messages included:
 
-- Packet 111: HART-IP Session Close Request.
-- Packet 112: TCP FIN, ACK.
-- Packet 113: HART-IP Session Close Response.
-- Packet 114: TCP RST.
+| Packet | Message |
+|---|---|
+| 111 | Session Close Request |
+| 112 | TCP FIN, ACK |
+| 113 | Session Close Response |
+| 114 | TCP RST |
 
-The final RST indicates a TCP reset following the HART-IP session closure exchange.
+The client sent a HART-IP Session Close Request. A TCP FIN, ACK was then observed, followed by the HART-IP Session Close Response and a TCP Reset (RST).
 
-The reason for the reset remains undetermined and requires further investigation.
+**Finding:** The HART-IP session close messages indicate an attempt to terminate the application-level session. The subsequent TCP RST is worth documenting and investigating further. However, a reset by itself does not prove malicious activity. Additional packet details and endpoint context would be needed to determine why it occurred.
 
-## 9. Security Observations
+## 6. Security Observations
 
-The investigation identified the following points:
+| Observation | Security interpretation |
+|---|---|
+| TCP connection to port 5094 | Consistent with HART-IP communication |
+| Successful three-way handshake | TCP connection was established |
+| Session initiation request and response | HART-IP session setup was observed |
+| Nine pass-through request/response pairs | Continued HART-IP message exchanges |
+| Keep-alive request and response | Endpoint responded to a session-maintenance message |
+| TCP RST during termination | Requires further investigation; not automatically malicious |
 
-- Successful TCP connection establishment.
-- Active bidirectional HART-IP communication.
-- Repeated request-response exchanges.
-- Successful Keep-Alive response.
-- TCP reset following the session closure exchange.
+### Items Requiring Further Investigation
 
-No confirmed malicious activity was established from the inspected packets.
+1. Inspect the contents of the HART-IP pass-through messages to understand the operations being requested.
+2. Examine the TCP RST packet and surrounding packet details to determine why the connection was reset.
+3. Confirm the meaning of the observed `0x86` value by identifying the exact HART-IP field in which it appears.
+4. Correlate the communication with device logs or other network evidence, if available.
 
-The final TCP reset should be investigated further to determine whether it reflects expected application behavior or an abnormal termination.
+## 7. Conclusion
 
-## 10. Conclusion
+The TCP investigation identified a HART-IP conversation between `192.168.0.101` and `192.168.0.10` using TCP port 5094.
 
-The PCAP analysis revealed an active HART-IP communication session between 192.168.0.101 and 192.168.0.10 over TCP port 5094.
+The connection completed the TCP three-way handshake, followed by HART-IP session initiation, nine pass-through request/response exchanges, and a keep-alive exchange. Session closure messages were also observed, followed by a TCP reset.
 
-The communication followed a recognizable sequence: TCP connection establishment, HART-IP session initiation, repeated Pass Through exchanges, Keep-Alive communication and session closure.
+Based on the packet information reviewed, the communication follows an identifiable HART-IP request-and-response sequence. The TCP reset and the meaning of the `0x86` value require additional investigation before drawing further security conclusions.
 
-The investigation demonstrates how Wireshark can be used to analyze TCP behavior and inspect industrial application-layer communication.
+No confirmed malicious activity has been established from the TCP evidence reviewed so far.
 
-Further examination of HART-IP payloads and the final TCP reset would provide additional insight into the nature of the communication.
+## 8. Wireshark Filters Used
 
-## 11. Skills Demonstrated
+| Purpose | Display filter |
+|---|---|
+| Display TCP traffic | `tcp` |
+| Select the HART-IP TCP conversation | `tcp.stream == 43` |
+| Display TCP connection requests | `tcp.flags.syn == 1` |
+| Display TCP packets carrying data | `tcp.len > 0` |
+| Display TCP connection resets | `tcp.flags.reset == 1` |
+| Display TCP connection termination flags | `tcp.flags.fin == 1` |
 
-- Wireshark packet analysis
+## 9. Skills Demonstrated
+
+- Wireshark TCP traffic analysis
 - TCP three-way handshake investigation
-- TCP session analysis
+- TCP conversation identification
 - HART-IP protocol inspection
-- Network communication timeline reconstruction
-- Industrial network security analysis
-- Security observations and technical reporting
+- Request-and-response analysis
+- Session management and termination analysis
+- Basic network security investigation
+
+---
+
+**Next stage:** UDP traffic analysis will be documented in a separate section, using the same evidence-based approach.
