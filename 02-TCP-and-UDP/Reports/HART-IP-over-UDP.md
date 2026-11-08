@@ -4,7 +4,7 @@
 
 Analyze UDP traffic in a provided network packet capture (PCAP) using Wireshark. The investigation focuses on understanding HART-IP communication, identifying communicating hosts and UDP conversations, examining session establishment and termination, and investigating ICMP communication errors.
 
-The goal is to establish a baseline of normal industrial network communication and identify observations that may be relevant to network security.
+The goal is to establish a baseline of normal UDP communication and identify observations that may be relevant to network security.
 
 ## 2. Tools and Evidence
 
